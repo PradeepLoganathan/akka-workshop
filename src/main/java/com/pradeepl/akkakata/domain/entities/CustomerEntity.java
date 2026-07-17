@@ -44,6 +44,10 @@ public class CustomerEntity extends EventSourcedEntity<CustomerState, CustomerEv
     return effects().persist(event).thenReply(__ -> id);
   }
 
+  public ReadOnlyEffect<CustomerState> get() {
+    return effects().reply(currentState());
+  }
+
   @Override
   public CustomerState applyEvent(CustomerEvents event) {
     
