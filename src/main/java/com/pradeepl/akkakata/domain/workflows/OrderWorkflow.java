@@ -101,18 +101,22 @@ public class OrderWorkflow extends Workflow<OrderWorkflow.State> {
 
     private Step chargeStep() {
         return step("charge")
-            .call(() ->
-                client.forKeyValueEntity(currentState().orderId())
+            .call(() -> {
+                String result = client.forKeyValueEntity(currentState().orderId())
                     .method(PaymentEntity::charge)
-                    .invoke(new RecordPayment(currentState().orderId(), currentState().totalCents()))
-            )
+                    .invoke(new RecordPayment(currentState().orderId(), currentState().totalCents()));
+                // Cancel the abandon timer here (in the step action, not in andThen —
+                // timer ops are only valid inside command handlers or step actions).
+                if ("OK".equals(result)) {
+                    timers().delete(ABANDON_TIMER_PREFIX + currentState().orderId());
+                }
+                return result;
+            })
             .andThen(String.class, result -> {
                 if ("OK".equals(result)) {
                     client.forEventSourcedEntity(currentState().orderId())
                         .method(OrderEntity::markPaid)
                         .invoke(new MarkPaid());
-                    // Cancel the abandon timer — order is paid.
-                    timers().delete(ABANDON_TIMER_PREFIX + currentState().orderId());
                     return effects().transitionTo("ship");
                 }
                 return effects().transitionTo("compensate", "payment:" + result);
